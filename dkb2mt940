@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+
+import csv
+import sys
+from datetime import datetime
+import mt940_writer as mt940
+
+# Usage: dkb2mt940 infile outfile
+
+# This adds the narrative as :86: description field
+class Transaction(mt940.Transaction):
+   def __str__(self):
+        return '{value_date}{entry_date}{category}{amount}{type_code}\n:86:{narrative}'.format(
+            value_date=self.date.strftime('%y%m%d'),
+            entry_date=self.date.strftime('%m%d'),
+            category='C' if self.amount >= 0 else 'D',
+            amount='{:0.2f}'.format(self.amount).replace('.', ',').replace('-', ''),
+            type_code=self.transaction_type.value,
+            narrative=self.narrative
+        )
+
+input_path = sys.argv[1]
+output_path = sys.argv[2]
+
+def parse_row(row):
+   date = datetime.strptime(row[0], '%d.%m.%Y')
+   if row[3]:
+      payee = '{} - {}'.format(row[3], row[4])
+   else:
+      payee = row[4]
+   memo = row[2]
+   amount = float(row[7].replace('.', '').replace(',', '.'))
+
+   narrative = '{}, {}'.format(payee, memo)
+
+   return Transaction(date, amount, mt940.TransactionType.transfer, narrative)
+
+with open(input_path, 'r', encoding='iso-8859-1') as infile:
+   csv_reader = csv.reader(infile, delimiter=';', quotechar='"')
+
+   row = next(csv_reader)
+   account = mt940.Account(row[1], '0')
+
+   for row in csv_reader:
+      if len(row) > 0:
+         break
+
+   opening_date = datetime.strptime(row[1], '%d.%m.%Y')
+   row = next(csv_reader)
+   closing_date = datetime.strptime(row[1], '%d.%m.%Y')
+   row = next(csv_reader)
+   balance, currency = row[1].split(' ')
+   balance = float(balance.replace('.', '').replace(',', '.'))
+   opening_balance = mt940.Balance(balance, opening_date, currency)
+   closing_balance = mt940.Balance(balance, closing_date, currency)
+
+   transactions = []
+   for row in csv_reader:
+      if len(row) == 12 and row[0] != 'Buchungstag':
+         transaction = parse_row(row)
+         closing_balance.amount += transaction.amount
+         if transaction.amount != 0:
+            transactions.append(transaction)
+
+   statement = mt940.Statement('0', account, '0', opening_balance, closing_balance,transactions)
+
+   with open(output_path, mode='w') as outfile:
+      outfile.write(str(statement))
+
