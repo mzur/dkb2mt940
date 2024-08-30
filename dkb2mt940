@@ -2,10 +2,11 @@
 
 import csv
 import sys
+from os.path import splitext
 from datetime import datetime
 import mt940_writer as mt940
 
-# Usage: dkb2mt940 infile outfile
+# Usage: dkb2mt940 infile
 
 # This adds the narrative as :86: description field
 class Transaction(mt940.Transaction):
@@ -20,49 +21,49 @@ class Transaction(mt940.Transaction):
         )
 
 input_path = sys.argv[1]
-output_path = sys.argv[2]
+output_path = splitext(input_path)[0] + '.txt'
 
 def parse_row(row):
-   date = datetime.strptime(row[0], '%d.%m.%Y')
-   if row[3]:
-      payee = '{} - {}'.format(row[3], row[4])
+   date = datetime.strptime(row[0], '%d.%m.%y')
+   if row[6] == 'Eingang':
+      payee = row[3]
    else:
       payee = row[4]
-   memo = row[2]
-   amount = float(row[7].replace('.', '').replace(',', '.'))
+   memo = row[5]
+   amount = float(row[8].replace('.', '').replace(',', '.'))
 
    narrative = '{}, {}'.format(payee, memo)
 
    return Transaction(date, amount, mt940.TransactionType.transfer, narrative)
 
-with open(input_path, 'r', encoding='iso-8859-1') as infile:
+with open(input_path, 'r', encoding='utf-8-sig') as infile:
+   currency = 'EUR'
    csv_reader = csv.reader(infile, delimiter=';', quotechar='"')
 
    row = next(csv_reader)
-   account = mt940.Account(row[1], '0')
+   account = mt940.Account(row[1], '')
 
-   for row in csv_reader:
-      if len(row) > 0:
-         break
+   next(csv_reader)
+   row = next(csv_reader)
 
-   opening_date = datetime.strptime(row[1], '%d.%m.%Y')
-   row = next(csv_reader)
-   closing_date = datetime.strptime(row[1], '%d.%m.%Y')
-   row = next(csv_reader)
-   balance, currency = row[1].split(' ')
-   balance = float(balance.replace('.', '').replace(',', '.'))
-   opening_balance = mt940.Balance(balance, opening_date, currency)
+   closing_date = datetime.strptime(row[0].split(' ')[-1][:-1], '%d.%m.%Y')
+   balance = float(row[1].split("\xa0")[0].replace('.', '').replace(',', '.'))
    closing_balance = mt940.Balance(balance, closing_date, currency)
+
+   next(csv_reader)
+   next(csv_reader)
 
    transactions = []
    for row in csv_reader:
-      if len(row) == 12 and row[0] != 'Buchungstag':
+      if len(row) == 12:
          transaction = parse_row(row)
-         closing_balance.amount += transaction.amount
+         balance -= transaction.amount
          if transaction.amount != 0:
             transactions.append(transaction)
 
-   statement = mt940.Statement('0', account, '0', opening_balance, closing_balance,transactions)
+   opening_balance = mt940.Balance(balance, transactions[-1].date, currency)
+
+   statement = mt940.Statement('0', account, '0', opening_balance, closing_balance, transactions)
 
    with open(output_path, mode='w') as outfile:
       outfile.write(str(statement))
