@@ -14,5 +14,5 @@ pip install mt940-writer
 ## Usage
 
 ```
-./dkb2mt940 infile.csv outfile.txt
+./dkb2mt940 infile.csv
 ```
