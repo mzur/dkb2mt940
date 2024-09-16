@@ -38,7 +38,7 @@ def parse_row(row):
 
 with open(input_path, 'r', encoding='utf-8-sig') as infile:
    currency = 'EUR'
-   csv_reader = csv.reader(infile, delimiter=';', quotechar='"')
+   csv_reader = csv.reader(infile, delimiter=',', quotechar='"')
 
    row = next(csv_reader)
    account = mt940.Account(row[1], '')
